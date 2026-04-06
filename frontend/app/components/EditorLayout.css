@@ -1,0 +1,206 @@
+/* Root layout */
+.editor-root {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #0d0d0d;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* Top Bar */
+.top-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: #111;
+    border-bottom: 1px solid #222;
+}
+
+.room-tag {
+    color: #555;
+    font-size: 12px;
+    margin-right: auto;
+}
+
+.analyze-btn {
+    background: #00ff88;
+    color: #000;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.analyze-btn:hover {
+    background: #00e077;
+}
+
+.analyze-btn.loading {
+    background: #333;
+    color: #888;
+    cursor: not-allowed;
+}
+
+.toggle-panel-btn {
+    background: #1a1a1a;
+    color: #888;
+    border: 1px solid #333;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.toggle-panel-btn:hover {
+    color: #fff;
+    border-color: #555;
+}
+
+/* Editor + Panel wrapper */
+.editor-wrapper {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Monaco area */
+.editor-area {
+    flex: 1;
+    transition: flex 0.3s ease;
+}
+
+.editor-area.shrink {
+    flex: 0.55;
+}
+
+/* AI Side Panel */
+.ai-panel {
+    width: 0;
+    overflow: hidden;
+    background: #111;
+    border-left: 1px solid #1e1e1e;
+    transition: width 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.ai-panel.open {
+    width: 420px;
+    min-width: 380px;
+}
+
+.ai-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid #1e1e1e;
+}
+
+.ai-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #00ff88;
+    box-shadow: 0 0 8px #00ff88;
+}
+
+.ai-panel-header h2 {
+    color: #eee;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+}
+
+/* Messages area */
+.ai-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ai-empty {
+    color: #444;
+    font-size: 13px;
+    text-align: center;
+    margin-top: 40px;
+    line-height: 1.8;
+}
+
+/* Message bubbles */
+.ai-message {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.ai-label {
+    font-size: 11px;
+    color: #555;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ai-message.ai p {
+    background: #1a1a1a;
+    color: #ddd;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.7;
+    margin: 0;
+    border-left: 3px solid #00ff88;
+    white-space: pre-wrap;
+}
+
+.ai-message.user p {
+    background: #0a0a0a;
+    color: #555;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 11px;
+    margin: 0;
+    white-space: pre-wrap;
+    max-height: 80px;
+    overflow: hidden;
+    border-left: 3px solid #333;
+}
+
+/* Typing animation */
+.typing span {
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}
