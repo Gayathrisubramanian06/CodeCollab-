@@ -9,33 +9,41 @@ load_dotenv()
 
 app = FastAPI()
 
-# CORS — allow frontend to talk to backend
+# 1. EXPANDED CORS: Added 127.0.0.1 and '*' to stop the 403 bouncer
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "*", 
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Create the Groq client using your API key
+# Create the Groq client
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-
-@app.websocket("/ws/analyze")
+# 2. MATCHED ENDPOINT: Changed from /ws/analyze to /ws/chat to match your frontend!
+@app.websocket("/ws/chat")
 async def analyze_code(websocket: WebSocket):
+    # Accept the connection explicitly
     await websocket.accept()
-    print("✅ Frontend connected!")
+    print("✅ Frontend connected to AI Brain!")
 
     try:
         while True:
             # 1. Receive code from the frontend
             code = await websocket.receive_text()
-            print(f"📨 Received code:\n{code}")
+            print(f"📨 Received code snippet: {len(code)} chars")
 
-            # 2. Send the code to Groq AI
+            # 2. Optional: Send an immediate "Thinking" message
             await websocket.send_text("🤖 Analyzing your code...")
 
+            # 3. Send the code to Groq AI
             chat_completion = client.chat.completions.create(
                 messages=[
                     {
@@ -47,19 +55,21 @@ async def analyze_code(websocket: WebSocket):
                         "content": f"Review this code and find bugs:\n\n{code}"
                     }
                 ],
-                model="llama3-8b-8192",  # fast free model on Groq
+                model="llama-3.3-70b-versatile",
             )
 
-            # 3. Extract the AI's response
+            # 4. Extract the AI's response
             ai_response = chat_completion.choices[0].message.content
-            print(f"🧠 AI Response:\n{ai_response}")
+            print(f"🧠 AI Response generated")
 
-            # 4. Send the AI response back to the frontend
+            # 5. Send the AI response back to the frontend
             await websocket.send_text(ai_response)
 
     except WebSocketDisconnect:
         print("❌ Frontend disconnected.")
-
+    except Exception as e:
+        print(f"⚠️ Error: {e}")
+        await websocket.close()
 
 # Health check
 @app.get("/")
