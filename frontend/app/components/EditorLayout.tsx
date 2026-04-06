@@ -17,6 +17,7 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
     const [isPanelOpen, setIsPanelOpen] = useState(false)
     const [messages, setMessages] = useState<Message[]>([])
     const [isAnalyzing, setIsAnalyzing] = useState(false)
+    const [selectionOnly, setSelectionOnly] = useState(false)  // 👈 NEW
     const bottomRef = useRef<HTMLDivElement>(null)
 
     // Auto scroll to latest message
@@ -51,10 +52,30 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
         new MonacoBinding(sharedText, editor.getModel(), new Set([editor]), awareness)
     }
 
-    // Send code to AI
+    // Send code to AI — supports full file OR selected text
     function analyzeCode() {
-        const code = editorRef.current?.getValue()
-        if (!code || !wsRef.current) return
+        const editor = editorRef.current
+        if (!editor || !wsRef.current) return
+
+        let code: string
+
+        if (selectionOnly) {
+            // getSelection() returns the current highlighted range in the editor
+            const selection = editor.getSelection()
+
+            // isEmpty() is true when cursor is placed but nothing is highlighted
+            const hasHighlight = selection && !selection.isEmpty()
+
+            // If something is highlighted, grab just that. Otherwise fall back to full file.
+            code = hasHighlight
+                ? editor.getModel().getValueInRange(selection)
+                : editor.getValue()
+        } else {
+            // Default: send the entire file
+            code = editor.getValue()
+        }
+
+        if (!code) return
 
         setIsPanelOpen(true)
         setIsAnalyzing(true)
@@ -71,6 +92,16 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
             {/* Top Bar */}
             <div className="top-bar">
                 <span className="room-tag">Room: {roomId}</span>
+
+                <label className="selection-toggle" title="Highlight code in the editor, then analyze only that part">
+                    <input
+                        type="checkbox"
+                        checked={selectionOnly}
+                        onChange={(e) => setSelectionOnly(e.target.checked)}
+                    />
+                    {selectionOnly ? '✂️ Selection' : '📄 Full File'}
+                </label>
+
                 <button
                     className={`analyze-btn ${isAnalyzing ? 'loading' : ''}`}
                     onClick={analyzeCode}

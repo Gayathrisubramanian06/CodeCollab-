@@ -58,3 +58,7 @@ __pycache__/
 # python misc
 .pytest_cache/
 .coverage
+
+venv/
+.env
+__pycache__/

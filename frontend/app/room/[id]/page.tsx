@@ -20,6 +20,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
     const [isPanelOpen, setIsPanelOpen] = useState(false);
     const [messages, setMessages] = useState<Message[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [selectionOnly, setSelectionOnly] = useState(false);
 
     const providerRef = useRef<any>(null);
     const bindingRef = useRef<any>(null);
@@ -107,7 +108,21 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
             return;
         }
 
-        const currentCode = editorRef.current?.getValue();
+        const editor = editorRef.current;
+        if (!editor) return;
+
+        let currentCode: string;
+
+        if (selectionOnly) {
+            const selection = editor.getSelection();
+            const hasHighlight = selection && !selection.isEmpty();
+            currentCode = hasHighlight
+                ? editor.getModel().getValueInRange(selection)
+                : editor.getValue();
+        } else {
+            currentCode = editor.getValue();
+        }
+
         if (!currentCode?.trim()) {
             setMessages((prev) => [
                 ...prev,
@@ -192,7 +207,22 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                 </div>
 
                 {/* Buttons */}
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    {/* Selection Only toggle */}
+                    <label style={{
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        color: '#ccc', fontSize: '13px', cursor: 'pointer',
+                        userSelect: 'none', marginRight: '10px'
+                    }}>
+                        <input
+                            type="checkbox"
+                            checked={selectionOnly}
+                            onChange={(e) => setSelectionOnly(e.target.checked)}
+                            style={{ accentColor: '#7c3aed', width: '14px', height: '14px', cursor: 'pointer' }}
+                        />
+                        Selection Only
+                    </label>
+
                     <button
                         onClick={handleAskAI}
                         disabled={isAnalyzing}
