@@ -1,3 +1,4 @@
+
 'use client';
 
 import { use, useEffect, useRef, useState } from 'react';
@@ -63,11 +64,30 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         ws.onopen = () => setIsAiConnected(true);
 
         ws.onmessage = (event) => {
+            const text: string = event.data;
+
+            // ── Handle CLEAR confirmation from backend ──────────────────
+            if (text.startsWith('🗑️')) {
+                setIsAnalyzing(false);
+                setMessages([{
+                    id: Date.now(),
+                    type: 'status',
+                    text,
+                }]);
+                return;
+            }
+
+            // ── Hide "Reviewing..." status before showing real response ──
+            setMessages((prev) => {
+                const withoutReviewing = prev.filter(
+                    (m) => !(m.type === 'status' && m.text.startsWith('⚙️'))
+                );
+                return [
+                    ...withoutReviewing,
+                    { id: Date.now(), type: 'ai', text },
+                ];
+            });
             setIsAnalyzing(false);
-            setMessages((prev) => [
-                ...prev,
-                { id: Date.now(), type: 'ai', text: event.data },
-            ]);
         };
 
         ws.onclose = () => setIsAiConnected(false);
@@ -81,7 +101,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         if (!aiSocketRef.current || !isAiConnected) {
             setMessages((prev) => [
                 ...prev,
-                { id: Date.now(), type: 'status', text: '❌ AI Brain is offline! Tell Developer B to start her Python server.' },
+                { id: Date.now(), type: 'status', text: '❌ AI Brain is offline! Tell Developer B to start the Python server.' },
             ]);
             setIsPanelOpen(true);
             return;
@@ -97,7 +117,6 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
             return;
         }
 
-        // Open panel, show code was sent
         setIsPanelOpen(true);
         setIsAnalyzing(true);
         setMessages((prev) => [
@@ -106,6 +125,18 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         ]);
 
         aiSocketRef.current.send(currentCode);
+    };
+
+    // ── Clear chat: wipe frontend state AND tell backend to clear history ──
+    const handleClearChat = () => {
+        // 1. Clear frontend messages immediately
+        setMessages([]);
+        setIsAnalyzing(false);
+
+        // 2. Tell backend to clear its conversation_history for this socket
+        if (aiSocketRef.current && isAiConnected) {
+            aiSocketRef.current.send('CLEAR');
+        }
     };
 
     // Cleanup on unmount
@@ -248,17 +279,37 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                         <span style={{ color: '#eee', fontSize: '14px', fontWeight: 600 }}>
                             AI Review
                         </span>
+
+                        {/* ── CLEAR CHAT BUTTON ── */}
                         {messages.length > 0 && (
                             <button
-                                onClick={() => setMessages([])}
+                                onClick={handleClearChat}
+                                title="Clear chat and reset AI memory"
                                 style={{
-                                    marginLeft: 'auto', background: 'none',
-                                    border: '1px solid #333', color: '#555',
-                                    fontSize: '11px', padding: '2px 8px',
-                                    borderRadius: '4px', cursor: 'pointer'
+                                    marginLeft: 'auto',
+                                    background: 'none',
+                                    border: '1px solid #333',
+                                    color: '#555',
+                                    fontSize: '11px',
+                                    padding: '3px 10px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontFamily: 'monospace',
+                                    transition: 'border-color 0.15s, color 0.15s',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                }}
+                                onMouseEnter={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = '#f87171';
+                                    (e.currentTarget as HTMLButtonElement).style.color = '#f87171';
+                                }}
+                                onMouseLeave={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = '#333';
+                                    (e.currentTarget as HTMLButtonElement).style.color = '#555';
                                 }}
                             >
-                                Clear
+                                🗑️ Clear
                             </button>
                         )}
                     </div>
