@@ -11,10 +11,13 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@supabase/supabase-js": "^2.101.1",
+    "highlight.js": "^11.11.1",
     "monaco-editor": "^0.55.1",
     "next": "16.2.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
     "y-monaco": "^0.1.6",
     "y-webrtc": "^10.3.0",
     "yjs": "^13.6.30"
