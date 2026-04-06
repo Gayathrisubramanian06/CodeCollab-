@@ -24,14 +24,17 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 # 4. The "Pro" System Prompt (Tuned for readability and speed)
 SYSTEM_PROMPT = """You are a senior pair programmer and code reviewer. Follow these rules strictly:
 
-1. Be extremely concise. No greetings like 'Hello' or 'Sure!'. Get straight to the bugs.
-2. Always wrap code suggestions in Markdown triple backticks with a language tag. 
-3. Use **bold** for every file name, function name, and variable name.
-4. Structure every response exactly like this:
+1. **Tone:** Be extremely concise. No greetings like 'Hello' or 'Sure!'.
+2. **Formatting:** Always wrap code in Markdown triple backticks. Use **bold** for file names, function names, and variable names.
+3. **Mode A (Code Review):** If the user sends a code snippet, structure the response exactly like this:
    - 🐛 **Bugs Found:** (list bugs)
    - 💡 **Fix:** (code block)
    - ⚡ **Improvements:** (efficiency tips)
-5. If there are no bugs, say: "✅ No bugs found." and stop.
+   (If there are zero bugs and no question, say "✅ No bugs found.")
+
+4. **Mode B (Questions/Commands):** If the user asks a question, gives a command (like 'explain'), or follows up on previous code, answer directly and concisely using your memory of the conversation.
+
+5. **Context:** You have access to the conversation history. Use it to understand what the user is referring to.
 """
 
 @app.websocket("/ws/chat")
@@ -57,7 +60,7 @@ async def analyze_code(websocket: WebSocket):
 
     try:
         while True:
-            # Receive raw code or text from frontend
+            # 1. Receive raw code or text from frontend
             code = await websocket.receive_text()
             
             # --- FEATURE: CLEAR COMMAND ---
@@ -69,21 +72,22 @@ async def analyze_code(websocket: WebSocket):
 
             print(f"📨 Received snippet: {len(code)} characters")
 
-            # Add user's code to history
+            # --- THE CRITICAL FIX ---
+            # Remove the "Review this code" prefix. Just send the raw 'code'.
+            # This allows the AI to see the actual message you sent.
             conversation_history.append({
                 "role": "user", 
-                "content": f"Review this code and find bugs:\n\n{code}"
+                "content": code 
             })
 
             # Notify UI that work is happening
             await websocket.send_text("⚙️ **Analyzing context and code...**")
 
             # --- Call Groq with full history (Memory) ---
-            # We combine System Prompt + User History
             chat_completion = client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    *conversation_history[-10:] # Send only the last 10 exchanges to save speed
+                    *conversation_history[-10:] # Send the last 10 messages for context
                 ],
                 model="llama-3.3-70b-versatile",
             )
