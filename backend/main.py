@@ -1,42 +1,67 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+from groq import Groq
+import os
+
+# Load the .env file
+load_dotenv()
 
 app = FastAPI()
 
-# 1. THE VIP LIST (Fixes the 403 Connection Rejected Error)
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
+# CORS — allow frontend to talk to backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, 
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 2. HEALTH CHECK
-@app.get("/")
-def read_root():
-    return {"status": "AI Brain is online! 🧠"}
+# Create the Groq client using your API key
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# 3. THE WEBSOCKET PIPELINE (Must match the Next.js connection string exactly)
-@app.websocket("/ws/chat")
-async def websocket_endpoint(websocket: WebSocket):
+
+@app.websocket("/ws/analyze")
+async def analyze_code(websocket: WebSocket):
     await websocket.accept()
-    print("✅ Frontend connected to AI Brain!")
-    
+    print("✅ Frontend connected!")
+
     try:
         while True:
-            # Wait for code to arrive from the frontend
-            user_code = await websocket.receive_text()
-            print(f"📨 Received code snippet: {len(user_code)} characters")
-            
-            # Send the Echo response back (Proves the bridge works)
-            response_message = f"[ECHO] AI received your code! It starts with: {user_code[:30]}..."
-            await websocket.send_text(response_message)
-            
+            # 1. Receive code from the frontend
+            code = await websocket.receive_text()
+            print(f"📨 Received code:\n{code}")
+
+            # 2. Send the code to Groq AI
+            await websocket.send_text("🤖 Analyzing your code...")
+
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert code reviewer. Review the code and find bugs, suggest improvements, and explain issues clearly."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Review this code and find bugs:\n\n{code}"
+                    }
+                ],
+                model="llama3-8b-8192",  # fast free model on Groq
+            )
+
+            # 3. Extract the AI's response
+            ai_response = chat_completion.choices[0].message.content
+            print(f"🧠 AI Response:\n{ai_response}")
+
+            # 4. Send the AI response back to the frontend
+            await websocket.send_text(ai_response)
+
     except WebSocketDisconnect:
         print("❌ Frontend disconnected.")
+
+
+# Health check
+@app.get("/")
+def root():
+    return {"status": "Python Brain is alive 🧠"}
