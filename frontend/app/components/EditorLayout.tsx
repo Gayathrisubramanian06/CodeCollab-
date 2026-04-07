@@ -17,7 +17,8 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
     const [isPanelOpen, setIsPanelOpen] = useState(false)
     const [messages, setMessages] = useState<Message[]>([])
     const [isAnalyzing, setIsAnalyzing] = useState(false)
-    const [selectionOnly, setSelectionOnly] = useState(false)  // 👈 NEW
+    const [selectionOnly, setSelectionOnly] = useState(false)
+    const [chatInput, setChatInput] = useState('')
     const bottomRef = useRef<HTMLDivElement>(null)
 
     // Auto scroll to latest message
@@ -27,7 +28,7 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
 
     // Connect to Python backend WebSocket
     useEffect(() => {
-        const ws = new WebSocket('ws://localhost:8000/ws/analyze')
+        const ws = new WebSocket('ws://localhost:8000/ws/chat')
 
         ws.onopen = () => console.log('✅ Connected to AI backend')
 
@@ -52,7 +53,7 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
         new MonacoBinding(sharedText, editor.getModel(), new Set([editor]), awareness)
     }
 
-    // Send code to AI — supports full file OR selected text
+    // Send full file or selection to AI for review
     function analyzeCode() {
         const editor = editorRef.current
         if (!editor || !wsRef.current) return
@@ -60,18 +61,12 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
         let code: string
 
         if (selectionOnly) {
-            // getSelection() returns the current highlighted range in the editor
             const selection = editor.getSelection()
-
-            // isEmpty() is true when cursor is placed but nothing is highlighted
             const hasHighlight = selection && !selection.isEmpty()
-
-            // If something is highlighted, grab just that. Otherwise fall back to full file.
             code = hasHighlight
                 ? editor.getModel().getValueInRange(selection)
                 : editor.getValue()
         } else {
-            // Default: send the entire file
             code = editor.getValue()
         }
 
@@ -84,6 +79,30 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
             { id: Date.now(), type: 'user', text: code },
         ])
         wsRef.current.send(code)
+    }
+
+    // Send a plain chat message to AI
+    function handleSendChat() {
+        const message = chatInput.trim()
+        if (!message || !wsRef.current) return
+
+        setMessages((prev) => [
+            ...prev,
+            { id: Date.now(), type: 'user', text: message },
+        ])
+
+        setIsAnalyzing(true)
+        setIsPanelOpen(true)
+        wsRef.current.send(message)
+        setChatInput('')
+    }
+
+    // Enter to send, Shift+Enter for new line
+    function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            handleSendChat()
+        }
     }
 
     return (
@@ -142,6 +161,7 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
                         <h2>AI Review</h2>
                     </div>
 
+                    {/* Messages */}
                     <div className="ai-messages">
                         {messages.length === 0 && (
                             <div className="ai-empty">
@@ -152,7 +172,7 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
                         {messages.map((msg) => (
                             <div key={msg.id} className={`ai-message ${msg.type}`}>
                                 <span className="ai-label">
-                                    {msg.type === 'ai' ? '🤖 AI Review' : '📝 Code Sent'}
+                                    {msg.type === 'ai' ? '🤖 AI Review' : '📝 You'}
                                 </span>
                                 <p>{msg.text}</p>
                             </div>
@@ -167,6 +187,26 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
 
                         <div ref={bottomRef} />
                     </div>
+
+                    {/* Chat input box */}
+                    <div className="chat-input-area">
+                        <textarea
+                            className="chat-input"
+                            placeholder="Ask the AI anything... (Enter to send)"
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            rows={2}
+                        />
+                        <button
+                            className="chat-send-btn"
+                            onClick={handleSendChat}
+                            disabled={isAnalyzing || !chatInput.trim()}
+                        >
+                            Send
+                        </button>
+                    </div>
+
                 </div>
 
             </div>
