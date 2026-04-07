@@ -1,196 +1,252 @@
-/* Root layout */
+/* ── Root layout ─────────────────────────────────────────────────── */
 .editor-root {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background: #0d0d0d;
-    font-family: 'JetBrains Mono', monospace;
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: var(--font-geist-sans), sans-serif;
 }
 
-/* Top Bar */
+/* ── Top bar ─────────────────────────────────────────────────────── */
 .top-bar {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 20px;
-    background: #111;
-    border-bottom: 1px solid #222;
+    gap: 10px;
+    padding: 8px 16px;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    flex-shrink: 0;
+    flex-wrap: wrap;
 }
 
 .room-tag {
-    color: #555;
     font-size: 12px;
-    margin-right: auto;
+    color: #8b949e;
+    background: #21262d;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid #30363d;
+    font-family: var(--font-geist-mono), monospace;
 }
 
-.analyze-btn {
-    background: #00ff88;
-    color: #000;
-    border: none;
-    padding: 8px 20px;
+/* Ghost text toggle button */
+.ghost-toggle-btn {
+    font-size: 12px;
+    padding: 4px 12px;
     border-radius: 6px;
-    font-weight: bold;
+    border: 1px solid #30363d;
     cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+    font-family: var(--font-geist-sans), sans-serif;
+}
+
+.ghost-toggle-btn.active {
+    background: #1f3a2a;
+    color: #3fb950;
+    border-color: #3fb950;
+}
+
+.ghost-toggle-btn.inactive {
+    background: #21262d;
+    color: #6e7681;
+    border-color: #30363d;
+}
+
+.ghost-toggle-btn:hover {
+    opacity: 0.85;
+}
+
+/* Selection mode toggle */
+.selection-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #8b949e;
+    cursor: pointer;
+    user-select: none;
+}
+
+.selection-toggle input[type="checkbox"] {
+    accent-color: #58a6ff;
+    cursor: pointer;
+}
+
+/* Analyze button */
+.analyze-btn {
+    margin-left: auto;
+    padding: 6px 16px;
     font-size: 13px;
-    transition: all 0.2s;
+    font-weight: 600;
+    background: #238636;
+    color: #ffffff;
+    border: 1px solid #2ea043;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
 }
 
-.analyze-btn:hover {
-    background: #00e077;
+.analyze-btn:hover:not(:disabled) {
+    background: #2ea043;
 }
 
+.analyze-btn:disabled,
 .analyze-btn.loading {
-    background: #333;
-    color: #888;
+    background: #21262d;
+    color: #484f58;
+    border-color: #30363d;
     cursor: not-allowed;
 }
 
+/* Toggle panel button */
 .toggle-panel-btn {
-    background: #1a1a1a;
-    color: #888;
-    border: 1px solid #333;
-    padding: 8px 16px;
+    padding: 6px 14px;
+    font-size: 13px;
+    background: #21262d;
+    color: #e6edf3;
+    border: 1px solid #30363d;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 12px;
-    transition: all 0.2s;
+    transition: background 0.2s;
 }
 
 .toggle-panel-btn:hover {
-    color: #fff;
-    border-color: #555;
+    background: #30363d;
 }
 
-/* Editor + Panel wrapper */
+/* ── Editor wrapper ───────────────────────────────────────────────── */
 .editor-wrapper {
     display: flex;
     flex: 1;
     overflow: hidden;
 }
 
-/* Monaco area */
 .editor-area {
     flex: 1;
     transition: flex 0.3s ease;
+    min-width: 0;
 }
 
 .editor-area.shrink {
-    flex: 0.55;
+    flex: 0 0 55%;
 }
 
-/* AI Side Panel */
+/* ── AI Panel ────────────────────────────────────────────────────── */
 .ai-panel {
     width: 0;
     overflow: hidden;
-    background: #111;
-    border-left: 1px solid #1e1e1e;
-    transition: width 0.3s ease;
     display: flex;
     flex-direction: column;
+    background: #0d1117;
+    border-left: 1px solid #30363d;
+    transition: width 0.3s ease;
 }
 
 .ai-panel.open {
-    width: 420px;
-    min-width: 380px;
+    width: 45%;
+    min-width: 320px;
 }
 
 .ai-panel-header {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 16px 20px;
-    border-bottom: 1px solid #1e1e1e;
+    padding: 12px 16px;
+    border-bottom: 1px solid #30363d;
+    background: #161b22;
+    flex-shrink: 0;
 }
 
 .ai-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #00ff88;
-    box-shadow: 0 0 8px #00ff88;
+    background: #3fb950;
+    box-shadow: 0 0 6px #3fb950;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
 }
 
 .ai-panel-header h2 {
-    color: #eee;
     font-size: 14px;
     font-weight: 600;
+    color: #e6edf3;
     margin: 0;
 }
 
-/* Messages area */
+/* ── Messages ────────────────────────────────────────────────────── */
 .ai-messages {
     flex: 1;
     overflow-y: auto;
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
 }
 
 .ai-empty {
-    color: #444;
-    font-size: 13px;
     text-align: center;
+    color: #484f58;
+    font-size: 13px;
     margin-top: 40px;
-    line-height: 1.8;
 }
 
-/* Message bubbles */
+.ai-empty strong {
+    color: #8b949e;
+}
+
 .ai-message {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    animation: slideIn 0.3s ease;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    word-break: break-word;
 }
 
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
+.ai-message.ai {
+    background: #161b22;
+    border: 1px solid #30363d;
+}
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.ai-message.user {
+    background: #1c2128;
+    border: 1px solid #388bfd40;
 }
 
 .ai-label {
+    display: block;
     font-size: 11px;
-    color: #555;
     font-weight: 600;
+    color: #8b949e;
+    margin-bottom: 6px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.05em;
 }
 
-.ai-message.ai p {
-    background: #1a1a1a;
-    color: #ddd;
-    padding: 12px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    line-height: 1.7;
+.ai-message p {
     margin: 0;
-    border-left: 3px solid #00ff88;
+    color: #e6edf3;
     white-space: pre-wrap;
 }
 
-.ai-message.user p {
-    background: #0a0a0a;
-    color: #555;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 11px;
-    margin: 0;
-    white-space: pre-wrap;
-    max-height: 80px;
-    overflow: hidden;
-    border-left: 3px solid #333;
-}
-
-/* Typing animation */
-.typing span {
-    animation: blink 1s infinite;
+/* Blinking cursor while streaming */
+.stream-cursor {
+    display: inline-block;
+    animation: blink 0.8s step-end infinite;
+    color: #58a6ff;
+    margin-left: 1px;
 }
 
 @keyframes blink {
@@ -205,119 +261,83 @@
     }
 }
 
-/* Selection toggle pill */
-.selection-toggle {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    border-radius: 6px;
-    border: 1px solid #333;
-    background: #1a1a1a;
-    color: #888;
-    font-size: 12px;
-    cursor: pointer;
-    user-select: none;
-    transition: all 0.2s;
+/* Typing dots spinner */
+.typing span {
+    display: inline-block;
+    animation: ellipsis 1.2s infinite;
 }
 
-.selection-toggle:hover {
-    border-color: #555;
-    color: #ccc;
+@keyframes ellipsis {
+    0% {
+        content: '.';
+    }
+
+    33% {
+        content: '..';
+    }
+
+    66% {
+        content: '...';
+    }
+
+    100% {
+        content: '';
+    }
 }
 
-/* When checkbox is checked — pill lights up green like your theme */
-.selection-toggle:has(input:checked) {
-    border-color: #00ff88;
-    color: #00ff88;
-    background: rgba(0, 255, 136, 0.08);
-}
-
-.selection-toggle input[type="checkbox"] {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 14px;
-    height: 14px;
-    border: 1px solid #444;
-    border-radius: 3px;
-    background: transparent;
-    cursor: pointer;
-    transition: all 0.2s;
-    position: relative;
-}
-
-/* Checkmark when active */
-.selection-toggle input[type="checkbox"]:checked {
-    background: #00ff88;
-    border-color: #00ff88;
-}
-
-.selection-toggle input[type="checkbox"]:checked::after {
-    content: '';
-    position: absolute;
-    left: 3px;
-    top: 0px;
-    width: 4px;
-    height: 8px;
-    border: 2px solid #000;
-    border-top: none;
-    border-left: none;
-    transform: rotate(45deg);
-}
-
-/* Chat Input Box */
+/* ── Chat input area ─────────────────────────────────────────────── */
 .chat-input-area {
-    padding: 16px;
-    border-top: 1px solid #1e1e1e;
-    background: #111;
     display: flex;
-    flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid #30363d;
+    background: #161b22;
     flex-shrink: 0;
 }
 
 .chat-input {
-    width: 100%;
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 8px;
-    color: #eee;
-    padding: 12px;
-    font-family: inherit;
+    flex: 1;
+    background: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 8px 12px;
     font-size: 13px;
+    font-family: var(--font-geist-sans), sans-serif;
     resize: none;
     outline: none;
     transition: border-color 0.2s;
-    box-sizing: border-box;
 }
 
 .chat-input:focus {
-    border-color: #00ff88;
+    border-color: #388bfd;
 }
 
 .chat-input::placeholder {
-    color: #666;
+    color: #484f58;
 }
 
 .chat-send-btn {
     align-self: flex-end;
-    background: #00ff88;
-    color: #000;
-    border: none;
     padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    background: #238636;
+    color: #ffffff;
+    border: 1px solid #2ea043;
     border-radius: 6px;
-    font-weight: bold;
     cursor: pointer;
-    font-size: 12px;
-    transition: all 0.2s;
+    transition: background 0.2s;
+    white-space: nowrap;
 }
 
 .chat-send-btn:hover:not(:disabled) {
-    background: #00e077;
+    background: #2ea043;
 }
 
 .chat-send-btn:disabled {
-    background: #333;
-    color: #888;
+    background: #21262d;
+    color: #484f58;
+    border-color: #30363d;
     cursor: not-allowed;
 }
