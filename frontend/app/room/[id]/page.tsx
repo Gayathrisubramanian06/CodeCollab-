@@ -5,6 +5,29 @@ import { use, useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import { debounce } from '@/app/lib/debounce';
+
+// ── Debounced autocomplete fetcher ────────────────────────────────────────────
+const debouncedFetch = debounce(
+    async (
+        code: string,
+        language: string,
+        resolve: (val: string) => void
+    ) => {
+        try {
+            const res = await fetch('http://localhost:8000/autocomplete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, language }),
+            })
+            const { completion } = await res.json()
+            resolve(completion || '')
+        } catch {
+            resolve('')
+        }
+    },
+    400
+)
 
 interface Message {
     id: number;
@@ -37,12 +60,19 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [selectionOnly, setSelectionOnly] = useState(false);
     const [chatInput, setChatInput] = useState('');
+    const [ghostTextEnabled, setGhostTextEnabled] = useState(true);
+    const [language, setLanguage] = useState('javascript');
 
     const providerRef = useRef<any>(null);
     const bindingRef = useRef<any>(null);
     const ydocRef = useRef<any>(null);
     const aiSocketRef = useRef<WebSocket | null>(null);
     const bottomRef = useRef<HTMLDivElement>(null);
+    const ghostEnabledRef = useRef(ghostTextEnabled);
+
+    useEffect(() => {
+        ghostEnabledRef.current = ghostTextEnabled;
+    }, [ghostTextEnabled]);
 
     // Auto scroll to latest message
     useEffect(() => {
@@ -72,6 +102,53 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         );
         bindingRef.current = binding;
         setIsConnected(true);
+
+        // ── Inline Completions Provider (Copilot-style ghost text) ────────────
+        monaco.languages.registerInlineCompletionsProvider(
+            { pattern: '**' },
+            {
+                async provideInlineCompletions(model: any, position: any) {
+                    if (!ghostEnabledRef.current) return { items: [] }
+
+                    const lineNumber = position.lineNumber
+                    const startLine = Math.max(1, lineNumber - 20)
+
+                    const codeContext = model.getValueInRange({
+                        startLineNumber: startLine,
+                        startColumn: 1,
+                        endLineNumber: lineNumber,
+                        endColumn: position.column,
+                    })
+
+                    if (codeContext.trim().length < 5) return { items: [] }
+
+                    const completion = await new Promise<string>((resolve) => {
+                        debouncedFetch(codeContext, model.getLanguageId(), resolve)
+                    })
+
+                    if (!completion) return { items: [] }
+
+                    return {
+                        items: [
+                            {
+                                insertText: completion,
+                                range: {
+                                    startLineNumber: position.lineNumber,
+                                    startColumn: position.column,
+                                    endLineNumber: position.lineNumber,
+                                    endColumn: position.column,
+                                },
+                            },
+                        ],
+                    }
+                },
+                freeInlineCompletions() { }
+            }
+        )
+
+        editor.updateOptions({
+            inlineSuggest: { enabled: true },
+        })
     };
 
     // Connect to Python AI backend
@@ -277,6 +354,43 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
 
                 {/* Buttons */}
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    {/* Language Selector */}
+                    <select
+                        value={language}
+                        onChange={(e) => setLanguage(e.target.value)}
+                        style={{
+                            background: '#1a1a1a', color: '#eee',
+                            border: '1px solid #333', padding: '6px 8px',
+                            borderRadius: '6px', fontSize: '12px', cursor: 'pointer', outline: 'none'
+                        }}
+                    >
+                        <option value="javascript">JS / TS</option>
+                        <option value="python">Python</option>
+                        <option value="html">HTML</option>
+                        <option value="css">CSS</option>
+                        <option value="java">Java</option>
+                        <option value="cpp">C++</option>
+                    </select>
+
+                    {/* Ghost text toggle */}
+                    <button
+                        onClick={() => setGhostTextEnabled((v) => !v)}
+                        title="Toggle Copilot-style ghost text autocomplete"
+                        style={{
+                            background: ghostTextEnabled ? '#1f3a2a' : '#1a1a1a',
+                            color: ghostTextEnabled ? '#3fb950' : '#888',
+                            border: `1px solid ${ghostTextEnabled ? '#3fb950' : '#333'}`,
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                        }}
+                    >
+                        {ghostTextEnabled ? '✨ Ghost Text On' : '✨ Ghost Text Off'}
+                    </button>
+
                     {/* Selection Only toggle */}
                     <label style={{
                         display: 'flex', alignItems: 'center', gap: '6px',
@@ -343,12 +457,15 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                     <Editor
                         height="100%"
                         theme="vs-dark"
-                        defaultLanguage="javascript"
+                        language={language}
                         onMount={handleEditorDidMount}
                         options={{
                             minimap: { enabled: false },
                             fontSize: 16,
-                            padding: { top: 20 }
+                            padding: { top: 20 },
+                            inlineSuggest: { enabled: true },
+                            quickSuggestions: false,
+                            suggest: { preview: true }
                         }}
                     />
                 </div>
