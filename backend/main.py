@@ -48,42 +48,63 @@ async def autocomplete(req: AutocompleteRequest):
     Ultra-fast inline ghost-text completion.
     Returns ONLY raw code — no markdown, no explanation.
     """
-    prompt = f"""You are an advanced Copilot-style code completion engine. Your task is to output the EXACT next few lines of code to continue the user's snippet.
-Do not output anything else.
+    system_instruction = f"""You are a strict inline code completion wrapper for {req.language}.
+Your ONLY task is to predict the characters that belong EXACTLY after the user's cursor.
 
 CRITICAL RULES:
-1. ONLY return the next 1-3 lines of code.
-2. DO NOT repeat the code that is already written above. Only output what comes NEXT.
-3. DO NOT output any conversational text.
-4. DO NOT wrap the output in markdown code blocks.
-
-Language: {req.language}
-
-Code so far:
-{req.code}
-
-# COMPLETION (Continuing exactly where the code above left off):
+1. ONLY output the immediate suffix. NEVER repeat what the user has already written on the current line!
+2. If the user is mid-word or mid-line, output ONLY the remaining characters.
+   - Example 1: User types `def ad`, you output `d(a, b):`
+   - Example 2: User types `a=int(in`, you output `put())`
+3. DO NOT wrap output in Markdown.
+4. No conversational text whatsoever.
 """
 
     response = client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="llama-3.1-8b-instant",
-        max_tokens=60,
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": req.code}
+        ],
+        model="llama-3.3-70b-versatile",
+        max_tokens=30,
         temperature=0.1,
-        stop=["\n\n", "```", "<|eot_id|>"],
+        stop=["\n\n", "```"],
     )
 
     completion = response.choices[0].message.content
     if not completion:
         return {"completion": ""}
 
-    # Clean up formatting hallucinations
     completion = completion.replace("```" + req.language, "").replace("```", "").strip()
+    
+    if completion.startswith("Here is") or completion.startswith("This is"):
+        return {"completion": ""}
 
-    # If the LLM repeated the exact last line of the prompt, strip it out
-    last_line = req.code.rstrip().split('\n')[-1].strip()
-    if last_line and completion.startswith(last_line):
-        completion = completion[len(last_line):].lstrip('\r\n')
+    last_line = req.code.split('\n')[-1]
+    
+    # ── AGGRESSIVE PREFIX STRIPPING ──
+    # If the LLM still hallucinates the prefix, strip the overlapping text completely
+    for i in range(len(last_line), 2, -1):
+        suffix = last_line[-i:]
+        if completion.startswith(suffix):
+            completion = completion[i:]
+            break
+
+    # Strip if LLM ignored space rules and matched ignoring spaces
+    import re
+    clean_last = re.sub(r'\s+', '', last_line)
+    clean_comp = re.sub(r'\s+', '', completion)
+    
+    if len(clean_last) > 3 and clean_comp.startswith(clean_last):
+        matched_chars = 0
+        cut_index = 0
+        for i, char in enumerate(completion):
+            if not char.isspace():
+                matched_chars += 1
+            if matched_chars == len(clean_last):
+                cut_index = i + 1
+                break
+        completion = completion[cut_index:]
 
     return {"completion": completion}
 
