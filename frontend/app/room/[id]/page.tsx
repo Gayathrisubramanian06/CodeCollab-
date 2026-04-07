@@ -76,7 +76,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
 
     // Connect to Python AI backend
     useEffect(() => {
-        const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat/${roomId}`);
+        const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat`);
 
         ws.onopen = () => setIsAiConnected(true);
 
@@ -92,15 +92,15 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                     );
                     return [...withoutReviewing, { id: Date.now() + Math.random(), type: 'ai', text: '' }];
                 });
-            } 
+            }
             else if (data === '[END]') {
                 // Stream is finished, do nothing
-            } 
+            }
             else if (data.startsWith('⚙️') || data.startsWith('🗑️') || data.startsWith('❌')) {
                 // It's a status message, make a new bubble
                 setMessages(prev => [...prev, { id: Date.now() + Math.random(), type: 'status', text: data }]);
                 setIsAnalyzing(false);
-            } 
+            }
             else {
                 // It is a tiny chunk of streaming text! 
                 // Append it to the LAST message in the array immutably
