@@ -21,6 +21,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [selectionOnly, setSelectionOnly] = useState(false);
+    const [chatInput, setChatInput] = useState('');
 
     const providerRef = useRef<any>(null);
     const bindingRef = useRef<any>(null);
@@ -140,6 +141,29 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         ]);
 
         aiSocketRef.current.send(currentCode);
+    };
+
+    // ── Send a plain chat message ──
+    const handleSendChat = () => {
+        const message = chatInput.trim();
+        if (!message || !aiSocketRef.current || !isAiConnected) return;
+
+        setMessages((prev) => [
+            ...prev,
+            { id: Date.now(), type: 'user', text: message },
+        ]);
+
+        setIsAnalyzing(true);
+        setIsPanelOpen(true);
+        aiSocketRef.current.send(message);
+        setChatInput('');
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSendChat();
+        }
     };
 
     // ── Clear chat: wipe frontend state AND tell backend to clear history ──
@@ -409,6 +433,70 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
 
                         <div ref={bottomRef} />
                     </div>
+
+                    {/* ── Chat Input Area ── */}
+                    <div style={{
+                        padding: '16px',
+                        borderTop: '1px solid #1e1e1e',
+                        background: '#111',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                        flexShrink: 0
+                    }}>
+                        <textarea
+                            placeholder="Ask the AI anything... (Enter to send)"
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            rows={2}
+                            style={{
+                                width: '100%',
+                                background: '#1a1a1a',
+                                border: '1px solid #333',
+                                borderRadius: '8px',
+                                color: '#eee',
+                                padding: '12px',
+                                fontFamily: 'inherit',
+                                fontSize: '13px',
+                                resize: 'none',
+                                outline: 'none',
+                                boxSizing: 'border-box',
+                                transition: 'border-color 0.2s'
+                            }}
+                            onFocus={(e) => e.target.style.borderColor = '#00ff88'}
+                            onBlur={(e) => e.target.style.borderColor = '#333'}
+                        />
+                        <button
+                            onClick={handleSendChat}
+                            disabled={isAnalyzing || !chatInput.trim()}
+                            style={{
+                                alignSelf: 'flex-end',
+                                background: (isAnalyzing || !chatInput.trim()) ? '#333' : '#00ff88',
+                                color: (isAnalyzing || !chatInput.trim()) ? '#888' : '#000',
+                                border: 'none',
+                                padding: '8px 16px',
+                                borderRadius: '6px',
+                                fontWeight: 'bold',
+                                cursor: (isAnalyzing || !chatInput.trim()) ? 'not-allowed' : 'pointer',
+                                fontSize: '12px',
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                                if (!isAnalyzing && chatInput.trim()) {
+                                    e.currentTarget.style.background = '#00e077';
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (!isAnalyzing && chatInput.trim()) {
+                                    e.currentTarget.style.background = '#00ff88';
+                                }
+                            }}
+                        >
+                            Send
+                        </button>
+                    </div>
+
                 </div>
             </div>
         </div>
