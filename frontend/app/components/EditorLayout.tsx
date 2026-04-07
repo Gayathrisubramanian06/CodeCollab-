@@ -9,6 +9,7 @@ interface Message {
     id: number
     type: 'user' | 'ai' | 'status'
     text: string
+    streaming?: boolean   // 👈 marks a message that is still being written
 }
 
 export default function EditorLayout({ roomId }: { roomId: string }) {
@@ -21,23 +22,50 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
     const [chatInput, setChatInput] = useState('')
     const bottomRef = useRef<HTMLDivElement>(null)
 
-    // Auto scroll to latest message
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages])
 
-    // Connect to Python backend WebSocket
     useEffect(() => {
         const ws = new WebSocket('ws://localhost:8000/ws/chat')
 
         ws.onopen = () => console.log('✅ Connected to AI backend')
 
         ws.onmessage = (e) => {
-            setIsAnalyzing(false)
-            setMessages((prev) => [
-                ...prev,
-                { id: Date.now(), type: 'ai', text: e.data },
-            ])
+            const token = e.data
+
+            // Stream is finished
+            if (token === '__END__') {
+                setIsAnalyzing(false)
+                // Mark the last message as no longer streaming
+                setMessages((prev) => {
+                    const last = prev[prev.length - 1]
+                    if (last && last.streaming) {
+                        return [...prev.slice(0, -1), { ...last, streaming: false }]
+                    }
+                    return prev
+                })
+                return
+            }
+
+            // Append token to existing streaming bubble, or create a new one
+            setMessages((prev) => {
+                const last = prev[prev.length - 1]
+
+                if (last && last.type === 'ai' && last.streaming) {
+                    // Keep building the same bubble
+                    return [
+                        ...prev.slice(0, -1),
+                        { ...last, text: last.text + token }
+                    ]
+                }
+
+                // First token — create a new AI bubble
+                return [
+                    ...prev,
+                    { id: Date.now(), type: 'ai', text: token, streaming: true }
+                ]
+            })
         }
 
         ws.onerror = () => console.error('WebSocket error')
@@ -46,14 +74,12 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
         return () => ws.close()
     }, [])
 
-    // Mount Monaco + Yjs
     function handleEditorMount(editor: any) {
         editorRef.current = editor
         const { sharedText, awareness } = createSyncEngine(roomId)
         new MonacoBinding(sharedText, editor.getModel(), new Set([editor]), awareness)
     }
 
-    // Send full file or selection to AI for review
     function analyzeCode() {
         const editor = editorRef.current
         if (!editor || !wsRef.current) return
@@ -81,7 +107,6 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
         wsRef.current.send(code)
     }
 
-    // Send a plain chat message to AI
     function handleSendChat() {
         const message = chatInput.trim()
         if (!message || !wsRef.current) return
@@ -97,7 +122,6 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
         setChatInput('')
     }
 
-    // Enter to send, Shift+Enter for new line
     function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
@@ -174,11 +198,18 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
                                 <span className="ai-label">
                                     {msg.type === 'ai' ? '🤖 AI Review' : '📝 You'}
                                 </span>
-                                <p>{msg.text}</p>
+                                <p>
+                                    {msg.text}
+                                    {/* Blinking cursor while streaming */}
+                                    {msg.streaming && (
+                                        <span className="stream-cursor">▋</span>
+                                    )}
+                                </p>
                             </div>
                         ))}
 
-                        {isAnalyzing && (
+                        {/* Only show spinner if no streaming bubble exists yet */}
+                        {isAnalyzing && !messages.some(m => m.streaming) && (
                             <div className="ai-message ai">
                                 <span className="ai-label">🤖 AI Review</span>
                                 <p className="typing">Thinking<span>...</span></p>
@@ -188,7 +219,7 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
                         <div ref={bottomRef} />
                     </div>
 
-                    {/* Chat input box */}
+                    {/* Chat input */}
                     <div className="chat-input-area">
                         <textarea
                             className="chat-input"
@@ -208,7 +239,6 @@ export default function EditorLayout({ roomId }: { roomId: string }) {
                     </div>
 
                 </div>
-
             </div>
         </div>
     )

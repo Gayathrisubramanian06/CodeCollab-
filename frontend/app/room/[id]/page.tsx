@@ -8,6 +8,7 @@ interface Message {
     id: number;
     type: 'user' | 'ai' | 'status';
     text: string;
+    streaming?: boolean;
 }
 
 export default function Room({ params }: { params: Promise<{ id: string }> }) {
@@ -66,30 +67,53 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         ws.onopen = () => setIsAiConnected(true);
 
         ws.onmessage = (event) => {
-            const text: string = event.data;
+            const token: string = event.data;
 
             // ── Handle CLEAR confirmation from backend ──────────────────
-            if (text.startsWith('🗑️')) {
+            if (token.startsWith('🗑️')) {
                 setIsAnalyzing(false);
                 setMessages([{
                     id: Date.now(),
                     type: 'status',
-                    text,
+                    text: token,
                 }]);
                 return;
             }
 
-            // ── Hide "Reviewing..." status before showing real response ──
+            // Stream is finished
+            if (token === '__END__') {
+                setIsAnalyzing(false);
+                // Mark the last message as no longer streaming
+                setMessages((prev) => {
+                    const last = prev[prev.length - 1];
+                    if (last && last.streaming) {
+                        return [...prev.slice(0, -1), { ...last, streaming: false }];
+                    }
+                    return prev;
+                });
+                return;
+            }
+
+            // Append token to existing streaming bubble, or create a new one
             setMessages((prev) => {
-                const withoutReviewing = prev.filter(
-                    (m) => !(m.type === 'status' && m.text.startsWith('⚙️'))
-                );
+                // Remove generic "Reviewing..." message if it's there
+                const filtered = prev.filter(m => !(m.type === 'status' && m.text.startsWith('⚙️')));
+                const last = filtered[filtered.length - 1];
+
+                if (last && last.type === 'ai' && last.streaming) {
+                    // Keep building the same bubble
+                    return [
+                        ...filtered.slice(0, -1),
+                        { ...last, text: last.text + token }
+                    ];
+                }
+
+                // First token — create a new AI bubble
                 return [
-                    ...withoutReviewing,
-                    { id: Date.now(), type: 'ai', text },
+                    ...filtered,
+                    { id: Date.now(), type: 'ai', text: token, streaming: true }
                 ];
             });
-            setIsAnalyzing(false);
         };
 
         ws.onclose = () => setIsAiConnected(false);
@@ -411,12 +435,13 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                                     overflow: msg.type === 'user' ? 'hidden' : 'visible',
                                 }}>
                                     {msg.text}
+                                    {msg.streaming && <span style={{ color: '#00ff88', marginLeft: '2px' }}>▋</span>}
                                 </div>
                             </div>
                         ))}
 
                         {/* Typing indicator */}
-                        {isAnalyzing && (
+                        {isAnalyzing && !messages.some(m => m.streaming) && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <span style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase' }}>
                                     🤖 AI Review
