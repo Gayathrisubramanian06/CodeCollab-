@@ -25,7 +25,7 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 SYSTEM_PROMPT = """You are a senior pair programmer and code reviewer. Follow these rules strictly:
 
 1. **Tone:** Be extremely concise. No greetings like 'Hello' or 'Sure!'.
-2. **Formatting:** Always wrap code in Markdown triple backticks. Use **bold** for file names, function names, and variable names.
+2. **Formatting:** Always wrap code in Markdown triple backticks. Use **bold** for file names, function names, and variable names ONLY in conversational text. **NEVER use markdown formatting like `**` inside the triple-backtick code blocks.** Code blocks must be clean and valid.
 3. **Mode A (Code Review):** If the user sends a code snippet, structure the response exactly like this:
    - 🐛 **Bugs Found:** (list bugs)
    - 💡 **Fix:** (code block)
@@ -97,7 +97,10 @@ async def analyze_code(websocket: WebSocket):
             # Notify UI that work is happening
             await websocket.send_text("⚙️ **Analyzing context and code...**")
 
-            # --- Call Groq with full history (Memory) ---
+            # Tell frontend to create a new, empty AI bubble
+            await websocket.send_text("[START]") 
+
+            # --- Call Groq WITH STREAMING ---
             chat_completion = client.chat.completions.create(
                 messages=[
                     # CRITICAL: We pass the 'current_system_prompt' here instead of the global one!
@@ -105,20 +108,29 @@ async def analyze_code(websocket: WebSocket):
                     *conversation_history[-10:] # Send the last 10 messages for context
                 ],
                 model="llama-3.3-70b-versatile",
+                stream=True
             )
 
-            # Extract AI response
-            ai_response = chat_completion.choices[0].message.content
+            full_response = ""
             
+            # Loop through the chunks as Groq generates them
+            for chunk in chat_completion:
+                if chunk.choices[0].delta.content:
+                    text_chunk = chunk.choices[0].delta.content
+                    full_response += text_chunk
+                    # Send millisecond by millisecond!
+                    await websocket.send_text(text_chunk) 
+            
+            # Tell frontend the typing is done
+            await websocket.send_text("[END]")
+
             # Add AI response to history so it remembers for the next message
             conversation_history.append({
                 "role": "assistant", 
-                "content": ai_response
+                "content": full_response
             })
 
-            # Send back to Developer A's UI
-            await websocket.send_text(ai_response)
-            print("🧠 AI response sent.")
+            print("🧠 AI streaming response finished.")
 
     except WebSocketDisconnect:
         print("❌ Frontend disconnected.")

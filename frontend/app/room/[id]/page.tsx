@@ -81,30 +81,39 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         ws.onopen = () => setIsAiConnected(true);
 
         ws.onmessage = (event) => {
-            const text: string = event.data;
+            const data: string = event.data;
 
-            // ── Handle CLEAR confirmation from backend ──────────────────
-            if (text.startsWith('🗑️')) {
+            if (data === '[START]') {
+                // Create a single, empty AI bubble and clear the Reviewing status
                 setIsAnalyzing(false);
-                setMessages([{
-                    id: Date.now(),
-                    type: 'status',
-                    text,
-                }]);
-                return;
+                setMessages(prev => {
+                    const withoutReviewing = prev.filter(
+                        (m) => !(m.type === 'status' && m.text.startsWith('⚙️'))
+                    );
+                    return [...withoutReviewing, { id: Date.now(), type: 'ai', text: '' }];
+                });
+            } 
+            else if (data === '[END]') {
+                // Stream is finished, do nothing
+            } 
+            else if (data.startsWith('⚙️') || data.startsWith('🗑️') || data.startsWith('❌')) {
+                // It's a status message, make a new bubble
+                setMessages(prev => [...prev, { id: Date.now(), type: 'status', text: data }]);
+                setIsAnalyzing(false);
+            } 
+            else {
+                // It is a tiny chunk of streaming text! 
+                // Append it to the LAST message in the array immutably
+                setMessages(prev => {
+                    const newMessages = [...prev];
+                    const lastMsg = newMessages[newMessages.length - 1];
+                    if (lastMsg && lastMsg.type === 'ai') {
+                        // Create a proper new object reference to trigger React's rendering
+                        newMessages[newMessages.length - 1] = { ...lastMsg, text: lastMsg.text + data };
+                    }
+                    return newMessages;
+                });
             }
-
-            // ── Hide "Reviewing..." status before showing real response ──
-            setMessages((prev) => {
-                const withoutReviewing = prev.filter(
-                    (m) => !(m.type === 'status' && m.text.startsWith('⚙️'))
-                );
-                return [
-                    ...withoutReviewing,
-                    { id: Date.now(), type: 'ai', text },
-                ];
-            });
-            setIsAnalyzing(false);
         };
 
         ws.onclose = () => setIsAiConnected(false);
