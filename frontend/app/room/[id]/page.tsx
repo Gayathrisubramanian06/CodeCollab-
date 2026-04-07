@@ -3,12 +3,27 @@
 
 import { use, useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
 
 interface Message {
     id: number;
     type: 'user' | 'ai' | 'status';
     text: string;
 }
+
+const extractText = (node: any): string => {
+    if (typeof node === 'string' || typeof node === 'number') {
+        return String(node);
+    }
+    if (Array.isArray(node)) {
+        return node.map(extractText).join('');
+    }
+    if (node && node.props && node.props.children) {
+        return extractText(node.props.children);
+    }
+    return '';
+};
 
 export default function Room({ params }: { params: Promise<{ id: string }> }) {
 
@@ -157,6 +172,27 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         setIsPanelOpen(true);
         aiSocketRef.current.send(message);
         setChatInput('');
+    };
+
+    // ── One-Click Apply Logic ──
+    const handleApplyCode = (code: string) => {
+        const editor = editorRef.current;
+        if (!editor) return;
+
+        const selection = editor.getSelection();
+        if (selection && !selection.isEmpty()) {
+            editor.executeEdits('ai-apply', [{
+                range: selection,
+                text: code,
+                forceMoveMarkers: true
+            }]);
+        } else {
+            editor.executeEdits('ai-apply', [{
+                range: editor.getModel().getFullModelRange(),
+                text: code,
+                forceMoveMarkers: true
+            }]);
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -406,11 +442,66 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                                     fontSize: msg.type === 'user' ? '11px' : '13px',
                                     lineHeight: '1.7',
                                     borderLeft: `3px solid ${msg.type === 'ai' ? '#00ff88' : msg.type === 'user' ? '#333' : '#f59e0b'}`,
-                                    whiteSpace: 'pre-wrap',
+                                    whiteSpace: msg.type === 'ai' ? 'normal' : 'pre-wrap',
                                     maxHeight: msg.type === 'user' ? '80px' : 'none',
                                     overflow: msg.type === 'user' ? 'hidden' : 'visible',
                                 }}>
-                                    {msg.text}
+                                    {msg.type === 'ai' ? (
+                                        <ReactMarkdown
+                                            rehypePlugins={[rehypeHighlight]}
+                                            components={{
+                                                code(props: any) {
+                                                    const { children, className, node, ...rest } = props;
+                                                    const match = /language-(\w+)/.exec(className || '');
+                                                    const isInline = !match && !className;
+
+                                                    if (isInline) {
+                                                        return <code style={{ background: '#333', padding: '2px 4px', borderRadius: '4px' }} className={className} {...rest}>{children}</code>;
+                                                    }
+
+                                                    const codeString = extractText(children).replace(/\n$/, '');
+
+                                                    return (
+                                                        <div style={{ position: 'relative', marginTop: '10px', marginBottom: '10px' }}>
+                                                            <div style={{
+                                                                display: 'flex', justifyContent: 'space-between',
+                                                                alignItems: 'center', background: '#222', padding: '4px 10px',
+                                                                borderTopLeftRadius: '6px', borderTopRightRadius: '6px',
+                                                                fontSize: '11px', color: '#888'
+                                                            }}>
+                                                                <span>{match ? match[1] : 'code'}</span>
+                                                                <button
+                                                                    onClick={() => handleApplyCode(codeString)}
+                                                                    style={{
+                                                                        background: '#3b82f6', color: '#fff', border: 'none',
+                                                                        padding: '4px 10px', borderRadius: '4px', cursor: 'pointer',
+                                                                        fontSize: '11px', fontWeight: 'bold'
+                                                                    }}
+                                                                    onMouseEnter={e => e.currentTarget.style.background = '#2563eb'}
+                                                                    onMouseLeave={e => e.currentTarget.style.background = '#3b82f6'}
+                                                                >
+                                                                    📋 Apply
+                                                                </button>
+                                                            </div>
+                                                            <pre style={{
+                                                                margin: 0, padding: '12px', background: '#0d0d0d',
+                                                                borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px',
+                                                                overflowX: 'auto'
+                                                            }}>
+                                                                <code className={className} {...rest}>
+                                                                    {children}
+                                                                </code>
+                                                            </pre>
+                                                        </div>
+                                                    );
+                                                }
+                                            }}
+                                        >
+                                            {msg.text}
+                                        </ReactMarkdown>
+                                    ) : (
+                                        msg.text
+                                    )}
                                 </div>
                             </div>
                         ))}
