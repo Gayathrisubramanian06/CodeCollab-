@@ -63,7 +63,7 @@ async def analyze_code(websocket: WebSocket):
             # 1. Receive raw code or text from frontend
             code = await websocket.receive_text()
             
-            # --- FEATURE: CLEAR COMMAND ---
+            # --- FEATURE 1: CLEAR COMMAND ---
             if code.strip().upper() == "CLEAR":
                 conversation_history.clear()
                 await websocket.send_text("🗑️ **Chat history cleared.** Fresh start!")
@@ -72,9 +72,23 @@ async def analyze_code(websocket: WebSocket):
 
             print(f"📨 Received snippet: {len(code)} characters")
 
-            # --- THE CRITICAL FIX ---
-            # Remove the "Review this code" prefix. Just send the raw 'code'.
-            # This allows the AI to see the actual message you sent.
+            # --- FEATURE 2: SLASH COMMAND ROUTER ---
+            # Default to our standard bug-finding SYSTEM_PROMPT
+            current_system_prompt = SYSTEM_PROMPT 
+            
+            # Change personality dynamically based on commands
+            if code.strip().startswith("/explain"):
+                current_system_prompt = "You are a helpful coding teacher. Break down the provided code or concept step-by-step for a beginner. Use simple terms. Do not just look for bugs."
+                # Strip the command out so the AI only sees the actual code/question
+                code = code.replace("/explain", "").strip() 
+                
+            elif code.strip().startswith("/optimize"):
+                current_system_prompt = "You are a performance optimization expert. Rewrite the provided code to make it execute faster and use less memory. Briefly explain why your version is better and mention Big O notation."
+                # Strip the command out
+                code = code.replace("/optimize", "").strip()
+
+            # --- MEMORY LOGIC ---
+            # Add the raw (but stripped) code/text to the user's history
             conversation_history.append({
                 "role": "user", 
                 "content": code 
@@ -86,7 +100,8 @@ async def analyze_code(websocket: WebSocket):
             # --- Call Groq with full history (Memory) ---
             chat_completion = client.chat.completions.create(
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    # CRITICAL: We pass the 'current_system_prompt' here instead of the global one!
+                    {"role": "system", "content": current_system_prompt},
                     *conversation_history[-10:] # Send the last 10 messages for context
                 ],
                 model="llama-3.3-70b-versatile",
