@@ -208,12 +208,12 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
     const handleRunCode = async () => {
         const editor = editorRef.current;
         if (!editor || !roomId) return;
-        
+
         let currentCode: string;
         if (selectionOnly) {
             const selection = editor.getSelection();
-            currentCode = (!selection || selection.isEmpty()) 
-                ? editor.getValue() 
+            currentCode = (!selection || selection.isEmpty())
+                ? editor.getValue()
                 : editor.getModel().getValueInRange(selection);
         } else {
             currentCode = editor.getValue();
@@ -232,11 +232,11 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                 body: JSON.stringify({ code: currentCode, language, room_id: roomId }),
             });
             const data = await res.json();
-            
+
             setTerminalOutput(data.output || 'Execution completed with no output.');
             if (data.error) {
                 setTerminalError(true);
-                setIsPanelOpen(true); 
+                setIsPanelOpen(true);
             }
         } catch (e: any) {
             setTerminalOutput(`Network Error: ${e.message}`);
@@ -535,7 +535,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                             }}
                         />
                     </div>
-                    
+
                     {/* Bottom: Execution Terminal */}
                     <div style={{
                         flex: '0.3', background: '#0a0a0a', borderTop: '1px solid #333',
@@ -547,10 +547,10 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                             <div style={{ width: '10px', height: '10px', background: '#27c93f', borderRadius: '50%' }} />
                             <span style={{ marginLeft: '10px', color: '#888', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>Terminal</span>
                         </div>
-                        <div style={{ 
-                            flex: 1, padding: '10px 15px', overflowY: 'auto', 
-                            color: terminalError ? '#f87171' : '#a3dec9', 
-                            whiteSpace: 'pre-wrap', fontSize: '13px' 
+                        <div style={{
+                            flex: 1, padding: '10px 15px', overflowY: 'auto',
+                            color: terminalError ? '#f87171' : '#a3dec9',
+                            whiteSpace: 'pre-wrap', fontSize: '13px'
                         }}>
                             {terminalOutput || 'Ready.'}
                         </div>
