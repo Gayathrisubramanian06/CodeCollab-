@@ -37,8 +37,12 @@ SYSTEM_PROMPT = """You are a senior pair programmer and code reviewer. Follow th
 5. **Context:** You have access to the conversation history. Use it to understand what the user is referring to.
 """
 
-@app.websocket("/ws/chat")
-async def analyze_code(websocket: WebSocket):
+# Create a global store for active rooms
+# Format: { room_id: { "clients": set(), "history": [] } }
+active_rooms = {}
+
+@app.websocket("/ws/chat/{room_id}")
+async def analyze_code(websocket: WebSocket, room_id: str):
     # --- WebSocket Security Handshake ---
     origin = websocket.headers.get("origin")
     allowed_origins = [
@@ -46,101 +50,119 @@ async def analyze_code(websocket: WebSocket):
         "http://127.0.0.1:3000"
     ]
 
-    # Close connection if it's not from our React app
     if origin not in allowed_origins and origin is not None:
         await websocket.close(code=1008)
         return
 
     await websocket.accept()
-    print("✅ AI Brain Linked: Frontend connected!")
-
-    # --- Per-Connection Memory ---
-    # This list lives as long as the WebSocket is open (one browser tab)
-    conversation_history = []
+    
+    # Initialize room if it doesn't exist
+    if room_id not in active_rooms:
+        active_rooms[room_id] = {
+            "clients": set(),
+            "history": []
+        }
+    
+    # Add client to the room
+    active_rooms[room_id]["clients"].add(websocket)
+    print(f"✅ User joined AI room: {room_id}. Total clients: {len(active_rooms[room_id]['clients'])}")
 
     try:
         while True:
-            # 1. Receive raw code or text from frontend
             code = await websocket.receive_text()
+            room = active_rooms[room_id]
             
             # --- FEATURE 1: CLEAR COMMAND ---
             if code.strip().upper() == "CLEAR":
-                conversation_history.clear()
-                await websocket.send_text("🗑️ **Chat history cleared.** Fresh start!")
-                print("🗑️ History wiped for this session.")
+                room["history"].clear()
+                # Broadcast clear to everyone in the room
+                for ws_client in list(room["clients"]):
+                    try:
+                        await ws_client.send_text("🗑️ **Chat history cleared.** Fresh start!")
+                    except Exception:
+                        pass
+                print(f"🗑️ History wiped for room {room_id}.")
                 continue
 
-            print(f"📨 Received snippet: {len(code)} characters")
+            print(f"📨 Received snippet in {room_id}: {len(code)} characters")
 
-            # --- FEATURE 2: SLASH COMMAND ROUTER ---
-            # Default to our standard bug-finding SYSTEM_PROMPT
             current_system_prompt = SYSTEM_PROMPT 
             
-            # Change personality dynamically based on commands
             if code.strip().startswith("/explain"):
                 current_system_prompt = "You are a helpful coding teacher. Break down the provided code or concept step-by-step for a beginner. Use simple terms. Do not just look for bugs."
-                # Strip the command out so the AI only sees the actual code/question
                 code = code.replace("/explain", "").strip() 
                 
             elif code.strip().startswith("/optimize"):
                 current_system_prompt = "You are a performance optimization expert. Rewrite the provided code to make it execute faster and use less memory. Briefly explain why your version is better and mention Big O notation."
-                # Strip the command out
                 code = code.replace("/optimize", "").strip()
 
-            # --- MEMORY LOGIC ---
-            # Add the raw (but stripped) code/text to the user's history
-            conversation_history.append({
-                "role": "user", 
-                "content": code 
-            })
+            # Add to room history
+            room["history"].append({"role": "user", "content": code})
+            
+            # Broadcast "Analyzing" status to all clients
+            for ws_client in list(room["clients"]):
+                try:
+                    await ws_client.send_text("⚙️ **Analyzing context and code...**")
+                except Exception:
+                    pass
 
-            # Notify UI that work is happening
-            await websocket.send_text("⚙️ **Analyzing context and code...**")
+            # Broadcast [START]
+            for ws_client in list(room["clients"]):
+                try:
+                    await ws_client.send_text("[START]") 
+                except Exception:
+                    pass
 
-            # Tell frontend to create a new, empty AI bubble
-            await websocket.send_text("[START]") 
-
-            # --- Call Groq WITH STREAMING ---
             chat_completion = client.chat.completions.create(
                 messages=[
-                    # CRITICAL: We pass the 'current_system_prompt' here instead of the global one!
                     {"role": "system", "content": current_system_prompt},
-                    *conversation_history[-10:] # Send the last 10 messages for context
+                    *room["history"][-10:]
                 ],
                 model="llama-3.3-70b-versatile",
                 stream=True
             )
 
             full_response = ""
-            
-            # Loop through the chunks as Groq generates them
             for chunk in chat_completion:
                 if chunk.choices[0].delta.content:
                     text_chunk = chunk.choices[0].delta.content
                     full_response += text_chunk
-                    # Send millisecond by millisecond!
-                    await websocket.send_text(text_chunk) 
-            
-            # Tell frontend the typing is done
-            await websocket.send_text("[END]")
+                    
+                    # Broadcast chunk
+                    for ws_client in list(room["clients"]):
+                        try:
+                            await ws_client.send_text(text_chunk)
+                        except Exception:
+                            room["clients"].discard(ws_client)
 
-            # Add AI response to history so it remembers for the next message
-            conversation_history.append({
-                "role": "assistant", 
-                "content": full_response
-            })
+            # Broadcast [END]
+            for ws_client in list(room["clients"]):
+                try:
+                    await ws_client.send_text("[END]")
+                except Exception:
+                    room["clients"].discard(ws_client)
 
-            print("🧠 AI streaming response finished.")
+            # Save full_response to room history
+            room["history"].append({"role": "assistant", "content": full_response})
+            print(f"🧠 AI streaming chunk finished for {room_id}.")
 
     except WebSocketDisconnect:
-        print("❌ Frontend disconnected.")
+        # Remove client on disconnect
+        if websocket in active_rooms.get(room_id, {}).get("clients", set()):
+            active_rooms[room_id]["clients"].remove(websocket)
+            print(f"❌ User left AI room {room_id}. Total clients: {len(active_rooms[room_id]['clients'])}")
+            
+            # Cleanup empty rooms
+            if not active_rooms[room_id]["clients"]:
+                del active_rooms[room_id]
+                print(f"🧹 Room {room_id} has been cleaned up.")
     except Exception as e:
         print(f"⚠️ Error: {str(e)}")
-        # Try to send the error to the UI so the user knows why it failed
-        try:
-            await websocket.send_text(f"❌ **AI Error:** {str(e)}")
-        except:
-            pass
+        for ws_client in list(active_rooms.get(room_id, {}).get("clients", [])):
+            try:
+                await ws_client.send_text(f"❌ **AI Error:** {str(e)}")
+            except Exception:
+                pass
 
 @app.get("/")
 def root():

@@ -76,7 +76,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
 
     // Connect to Python AI backend
     useEffect(() => {
-        const ws = new WebSocket('ws://127.0.0.1:8000/ws/chat');
+        const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat/${roomId}`);
 
         ws.onopen = () => setIsAiConnected(true);
 
@@ -90,7 +90,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                     const withoutReviewing = prev.filter(
                         (m) => !(m.type === 'status' && m.text.startsWith('⚙️'))
                     );
-                    return [...withoutReviewing, { id: Date.now(), type: 'ai', text: '' }];
+                    return [...withoutReviewing, { id: Date.now() + Math.random(), type: 'ai', text: '' }];
                 });
             } 
             else if (data === '[END]') {
@@ -98,7 +98,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
             } 
             else if (data.startsWith('⚙️') || data.startsWith('🗑️') || data.startsWith('❌')) {
                 // It's a status message, make a new bubble
-                setMessages(prev => [...prev, { id: Date.now(), type: 'status', text: data }]);
+                setMessages(prev => [...prev, { id: Date.now() + Math.random(), type: 'status', text: data }]);
                 setIsAnalyzing(false);
             } 
             else {
@@ -120,14 +120,14 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         aiSocketRef.current = ws;
 
         return () => ws.close();
-    }, []);
+    }, [roomId]);
 
     // Send code to AI
     const handleAskAI = () => {
         if (!aiSocketRef.current || !isAiConnected) {
             setMessages((prev) => [
                 ...prev,
-                { id: Date.now(), type: 'status', text: '❌ AI Brain is offline! Tell Developer B to start the Python server.' },
+                { id: Date.now() + Math.random(), type: 'status', text: '❌ AI Brain is offline! Tell Developer B to start the Python server.' },
             ]);
             setIsPanelOpen(true);
             return;
@@ -151,7 +151,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         if (!currentCode?.trim()) {
             setMessages((prev) => [
                 ...prev,
-                { id: Date.now(), type: 'status', text: '⚠️ Editor is empty. Write some code first!' },
+                { id: Date.now() + Math.random(), type: 'status', text: '⚠️ Editor is empty. Write some code first!' },
             ]);
             setIsPanelOpen(true);
             return;
@@ -161,7 +161,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
         setIsAnalyzing(true);
         setMessages((prev) => [
             ...prev,
-            { id: Date.now(), type: 'user', text: currentCode },
+            { id: Date.now() + Math.random(), type: 'user', text: currentCode },
         ]);
 
         aiSocketRef.current.send(currentCode);
@@ -174,7 +174,7 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
 
         setMessages((prev) => [
             ...prev,
-            { id: Date.now(), type: 'user', text: message },
+            { id: Date.now() + Math.random(), type: 'user', text: message },
         ]);
 
         setIsAnalyzing(true);
