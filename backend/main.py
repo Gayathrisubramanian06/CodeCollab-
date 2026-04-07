@@ -4,6 +4,9 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from groq import Groq
 import os
+import subprocess
+import tempfile
+from fastapi import BackgroundTasks
 
 load_dotenv()
 
@@ -22,8 +25,9 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 SYSTEM_PROMPT = """You are a senior pair programmer and code reviewer. Follow these rules strictly:
 
 1. **Tone:** Be extremely concise. No greetings like 'Hello' or 'Sure!'.
-2. **Formatting:** Always wrap code in Markdown triple backticks. Use **bold** for file names, function names, and variable names.
-3. **Mode A (Code Review):** If the user sends a code snippet, structure the response exactly like this:
+2. **Formatting:** Always wrap code in Markdown triple backticks. Use **bold** for file names and function names ONLY.
+3. **CRITICAL:** NEVER use **bold** or any formatting markers INSIDE a triple-backtick code block. For example, use result = 1 + 2 instead of **result** = 1 + 2.
+4. **Mode A (Code Review):** If the user sends a code snippet, structure the response exactly like this:
    - 🐛 **Bugs Found:** (list bugs)
    - 💡 **Fix:** (code block)
    - ⚡ **Improvements:** (efficiency tips)
@@ -109,10 +113,141 @@ CRITICAL RULES:
     return {"completion": completion}
 
 
+active_rooms = {}
+
+class ExecuteRequest(BaseModel):
+    code: str
+    language: str
+    room_id: str
+
+async def trigger_auto_fix(room_id: str, code: str, error_log: str):
+    room = active_rooms.get(room_id)
+    if not room or not room["clients"]:
+        return
+
+    prompt = f"The user executed the following code but it threw an error.\n\nCODE:\n{code}\n\nERROR LOG:\n{error_log}\n\nExplain the error concisely, and provide the fixed code. Follow previous formatting rules."
+    
+    # Broadcast analyzing status
+    for ws_client in list(room["clients"]):
+        try:
+            await ws_client.send_text("⚙️ **Auto-Fix Interceptor Initialized...**")
+            await ws_client.send_text("[START]")
+        except Exception:
+            pass
+            
+    try:
+        stream = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                *room["history"][-10:],
+                {"role": "user", "content": prompt}
+            ],
+            model="llama-3.3-70b-versatile",
+            stream=True
+        )
+        
+        full_response = ""
+        for chunk in stream:
+            token = chunk.choices[0].delta.content
+            if token is not None:
+                full_response += token
+                for ws_client in list(room["clients"]):
+                    try:
+                        await ws_client.send_text(token)
+                    except:
+                        pass
+                        
+        for ws_client in list(room["clients"]):
+            try:
+                await ws_client.send_text("[END]")
+            except Exception:
+                pass
+                
+        room["history"].append({"role": "user", "content": prompt})
+        room["history"].append({"role": "assistant", "content": full_response})
+    except Exception as e:
+        for ws_client in list(room["clients"]):
+            try:
+                await ws_client.send_text(f"❌ **Auto-Fix Error:** {str(e)}")
+                await ws_client.send_text("[END]")
+            except:
+                pass
+
+import asyncio
+
+def run_local_code(cmd_parts):
+    """Synchronous wrapper for subprocess, to be run in a thread."""
+    return subprocess.run(cmd_parts, capture_output=True, text=True, timeout=10, errors='replace')
+
+@app.post("/execute")
+async def execute_code(req: ExecuteRequest, background_tasks: BackgroundTasks):
+    try:
+        # Map the frontend language to a local extension
+        lang_map = {
+            "javascript": { "ext": ".js", "cmd": "node" },
+            "js": { "ext": ".js", "cmd": "node" },
+            "python": { "ext": ".py", "cmd": "python" }
+        }
+        
+        config = lang_map.get(req.language.lower())
+        if not config:
+            return {"output": f"Error: Language '{req.language}' is not supported for local execution yet.", "error": True}
+
+        ext = config["ext"]
+        primary_cmd = config["cmd"]
+
+        # 1. Create a safe temporary file
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False, mode="w", encoding="utf-8") as f:
+            f.write(req.code)
+            temp_path = f.name
+            
+        # 2. Command detection (for Windows 'python' vs 'py')
+        final_cmd = primary_cmd
+        if primary_cmd == "python":
+            if os.system("python --version > NUL 2>&1") != 0:
+                final_cmd = "py"
+
+        cmd_parts = [final_cmd, temp_path]
+        
+        try:
+            # 3. Use to_thread to keep the async loop alive while running the subprocess
+            result = await asyncio.to_thread(run_local_code, cmd_parts)
+            stdout = result.stdout.strip()
+            stderr = result.stderr.strip()
+            code_exit = result.returncode
+        except subprocess.TimeoutExpired:
+            return {"output": f"Timeout Error: {req.language} code took too long to run (>10s).", "error": True}
+        finally:
+            if os.path.exists(temp_path):
+                try: os.remove(temp_path)
+                except: pass
+        
+        # 4. Handle results
+        has_error = (code_exit != 0 and code_exit is not None) or len(stderr) > 0
+        
+        if has_error:
+            # Dispatch async AI Auto-Fix
+            background_tasks.add_task(trigger_auto_fix, req.room_id, req.code, stderr if stderr else stdout)
+            
+        output_res = stdout
+        if stderr:
+             output_res = stdout + "\n" + stderr if stdout else stderr
+             
+        return {
+            "output": output_res if output_res else "Success (Process finished with no output)", 
+            "error": has_error,
+            "engine": f"Local {req.language} Engine ({final_cmd})"
+        }
+    except Exception as e:
+        import traceback
+        print(f"DEBUG EXECUTE ERROR:\n{traceback.format_exc()}")
+        return {"output": f"Execution Engine Error: {str(e)}", "error": True}
+
+
 # ── WebSocket chat / review endpoint ────────────────────────────────────────
 
-@app.websocket("/ws/chat")
-async def analyze_code(websocket: WebSocket):
+@app.websocket("/ws/chat/{room_id}")
+async def analyze_code(websocket: WebSocket, room_id: str):
     origin = websocket.headers.get("origin")
     allowed_origins = [
         "http://localhost:3000",
@@ -126,18 +261,25 @@ async def analyze_code(websocket: WebSocket):
     await websocket.accept()
     print("✅ AI Brain Linked: Frontend connected!")
 
-    conversation_history = []
-
+    if room_id not in active_rooms:
+        active_rooms[room_id] = {"clients": set(), "history": []}
+    
+    room = active_rooms[room_id]
+    room["clients"].add(websocket)
+    
     try:
         while True:
             code = await websocket.receive_text()
 
-            # CLEAR command
             if code.strip().upper() == "CLEAR":
-                conversation_history.clear()
-                await websocket.send_text("🗑️ **Chat history cleared.** Fresh start!")
-                await websocket.send_text("[END]")
-                print("🗑️ History wiped for this session.")
+                room["history"].clear()
+                for ws_client in list(room["clients"]):
+                    try:
+                        await ws_client.send_text("🗑️ **Chat history cleared.** Fresh start!")
+                        await ws_client.send_text("[END]")
+                    except:
+                        pass
+                print(f"🗑️ History wiped for {room_id}.")
                 continue
 
             print(f"📨 Received snippet: {len(code)} characters")
@@ -153,54 +295,55 @@ async def analyze_code(websocket: WebSocket):
                 current_system_prompt = "You are a performance optimization expert. Rewrite the provided code to make it execute faster and use less memory. Briefly explain why your version is better and mention Big O notation."
                 code = code.replace("/optimize", "").strip()
 
-            # Add to history
-            conversation_history.append({
-                "role": "user",
-                "content": code
-            })
+            room["history"].append({"role": "user", "content": code})
 
-            # Signal to frontend that stream is starting
-            await websocket.send_text("[START]")
+            for ws_client in list(room["clients"]):
+                try:
+                    await ws_client.send_text("⚙️ **Analyzing context and code...**")
+                    await ws_client.send_text("[START]")
+                except:
+                    pass
 
-            # ── Streaming call to Groq ──────────────────────────────────────
             stream = client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": current_system_prompt},
-                    *conversation_history[-10:]
+                    *room["history"][-10:]
                 ],
                 model="llama-3.3-70b-versatile",
                 stream=True,
             )
 
             full_response = ""
-
             for chunk in stream:
                 token = chunk.choices[0].delta.content
-
                 if token is not None:
                     full_response += token
-                    await websocket.send_text(token)
+                    for ws_client in list(room["clients"]):
+                        try:
+                            await ws_client.send_text(token)
+                        except:
+                            pass
 
-            # Signal to frontend that stream is complete
-            await websocket.send_text("[END]")
+            for ws_client in list(room["clients"]):
+                try:
+                    await ws_client.send_text("[END]")
+                except:
+                    pass
 
-            # Save full response to memory
-            conversation_history.append({
-                "role": "assistant",
-                "content": full_response
-            })
-
-            print(f"🧠 Full streamed response sent ({len(full_response)} chars)")
+            room["history"].append({"role": "assistant", "content": full_response})
 
     except WebSocketDisconnect:
-        print("❌ Frontend disconnected.")
+        if websocket in active_rooms.get(room_id, {}).get("clients", set()):
+            active_rooms[room_id]["clients"].remove(websocket)
+            if not active_rooms[room_id]["clients"]:
+                del active_rooms[room_id]
     except Exception as e:
-        print(f"⚠️ Error: {str(e)}")
-        try:
-            await websocket.send_text(f"❌ **AI Error:** {str(e)}")
-            await websocket.send_text("[END]")
-        except:
-            pass
+        for ws_client in list(active_rooms.get(room_id, {}).get("clients", [])):
+            try:
+                await ws_client.send_text(f"❌ **AI Error:** {str(e)}")
+                await ws_client.send_text("[END]")
+            except:
+                pass
 
 
 @app.get("/")

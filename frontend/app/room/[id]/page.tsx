@@ -62,6 +62,9 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
     const [chatInput, setChatInput] = useState('');
     const [ghostTextEnabled, setGhostTextEnabled] = useState(true);
     const [language, setLanguage] = useState('javascript');
+    const [terminalOutput, setTerminalOutput] = useState('');
+    const [isExecuting, setIsExecuting] = useState(false);
+    const [terminalError, setTerminalError] = useState(false);
 
     const providerRef = useRef<any>(null);
     const bindingRef = useRef<any>(null);
@@ -153,7 +156,9 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
 
     // Connect to Python AI backend
     useEffect(() => {
-        const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat`);
+        if (!roomId) return;
+
+        const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat/${roomId}`);
 
         ws.onopen = () => setIsAiConnected(true);
 
@@ -198,6 +203,48 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
 
         return () => ws.close();
     }, [roomId]);
+
+    // ── Execute Code via Piston & Auto-Fix ──
+    const handleRunCode = async () => {
+        const editor = editorRef.current;
+        if (!editor || !roomId) return;
+        
+        let currentCode: string;
+        if (selectionOnly) {
+            const selection = editor.getSelection();
+            currentCode = (!selection || selection.isEmpty()) 
+                ? editor.getValue() 
+                : editor.getModel().getValueInRange(selection);
+        } else {
+            currentCode = editor.getValue();
+        }
+
+        if (!currentCode.trim()) return;
+
+        setIsExecuting(true);
+        setTerminalOutput('Executing Locally...');
+        setTerminalError(false);
+
+        try {
+            const res = await fetch('http://localhost:8000/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: currentCode, language, room_id: roomId }),
+            });
+            const data = await res.json();
+            
+            setTerminalOutput(data.output || 'Execution completed with no output.');
+            if (data.error) {
+                setTerminalError(true);
+                setIsPanelOpen(true); 
+            }
+        } catch (e: any) {
+            setTerminalOutput(`Network Error: ${e.message}`);
+            setTerminalError(true);
+        } finally {
+            setIsExecuting(false);
+        }
+    };
 
     // Send code to AI
     const handleAskAI = () => {
@@ -407,6 +454,22 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
                     </label>
 
                     <button
+                        onClick={handleRunCode}
+                        disabled={isExecuting}
+                        style={{
+                            background: isExecuting ? '#444' : '#22c55e',
+                            color: '#fff', border: 'none', padding: '8px 18px',
+                            borderRadius: '8px', fontSize: '13px', fontWeight: 'bold',
+                            cursor: isExecuting ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s',
+                            boxShadow: '0 0 12px rgba(34,197,94,0.3)',
+                            marginRight: '8px'
+                        }}
+                    >
+                        {isExecuting ? '⏳ Running...' : '▶ Run Code'}
+                    </button>
+
+                    <button
                         onClick={handleAskAI}
                         disabled={isAnalyzing}
                         style={{
@@ -448,26 +511,50 @@ export default function Room({ params }: { params: Promise<{ id: string }> }) {
             {/* ── Editor + AI Panel ── */}
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
-                {/* Monaco Editor */}
+                {/* ── Editor & Terminal Split ── */}
                 <div style={{
                     flex: isPanelOpen ? '0.55' : '1',
+                    display: 'flex', flexDirection: 'column',
                     transition: 'flex 0.3s ease',
                     overflow: 'hidden'
                 }}>
-                    <Editor
-                        height="100%"
-                        theme="vs-dark"
-                        language={language}
-                        onMount={handleEditorDidMount}
-                        options={{
-                            minimap: { enabled: false },
-                            fontSize: 16,
-                            padding: { top: 20 },
-                            inlineSuggest: { enabled: true },
-                            quickSuggestions: false,
-                            suggest: { preview: true }
-                        }}
-                    />
+                    {/* Top: Editor */}
+                    <div style={{ flex: '0.7', position: 'relative' }}>
+                        <Editor
+                            height="100%"
+                            theme="vs-dark"
+                            language={language}
+                            onMount={handleEditorDidMount}
+                            options={{
+                                minimap: { enabled: false },
+                                fontSize: 16,
+                                padding: { top: 20 },
+                                inlineSuggest: { enabled: true },
+                                quickSuggestions: false,
+                                suggest: { preview: true }
+                            }}
+                        />
+                    </div>
+                    
+                    {/* Bottom: Execution Terminal */}
+                    <div style={{
+                        flex: '0.3', background: '#0a0a0a', borderTop: '1px solid #333',
+                        display: 'flex', flexDirection: 'column', fontFamily: 'monospace'
+                    }}>
+                        <div style={{ background: '#111', padding: '6px 15px', borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '10px', height: '10px', background: '#ff5f56', borderRadius: '50%' }} />
+                            <div style={{ width: '10px', height: '10px', background: '#ffbd2e', borderRadius: '50%' }} />
+                            <div style={{ width: '10px', height: '10px', background: '#27c93f', borderRadius: '50%' }} />
+                            <span style={{ marginLeft: '10px', color: '#888', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>Terminal</span>
+                        </div>
+                        <div style={{ 
+                            flex: 1, padding: '10px 15px', overflowY: 'auto', 
+                            color: terminalError ? '#f87171' : '#a3dec9', 
+                            whiteSpace: 'pre-wrap', fontSize: '13px' 
+                        }}>
+                            {terminalOutput || 'Ready.'}
+                        </div>
+                    </div>
                 </div>
 
                 {/* ── AI Side Panel ── */}
